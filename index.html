@@ -2,39 +2,37 @@
 <html lang="fi">
 <head>
     <meta charset="UTF-8">
-    <title>AETHER STATE | THE COMPLEX</title>
+    <title>AETHER STATE | LIVING WORLD v11</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #00ffcc; pointer-events: none; z-index: 10; }
-        .hud { background: rgba(0,20,20,0.85); padding: 15px; border: 2px solid #00ffcc; border-radius: 5px; }
-        #blocker { position: absolute; width: 100%; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; z-index: 100; }
-        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #00ffcc; border-radius: 50%; transform: translate(-50%, -50%); }
+        body { margin: 0; overflow: hidden; background: #87CEEB; font-family: 'Segoe UI', sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #fff; text-shadow: 2px 2px 4px #000; pointer-events: none; z-index: 10; }
+        .hud { background: rgba(0,0,0,0.7); padding: 15px; border: 2px solid #fff; border-radius: 10px; }
+        #blocker { position: absolute; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; z-index: 100; }
     </style>
 </head>
 <body>
 
 <div id="blocker" onclick="this.style.display='none'; document.body.requestPointerLock();">
     <div style="text-align: center;">
-        <h1 style="color: #00ffcc; font-size: 45px; margin: 0;">AETHER STATE: COMPLEX</h1>
-        <p>TÄYSI VANKILA: Piha, Ruokala, Suihkut, Sellit</p>
-        <p style="margin-top: 30px; border: 1px solid #fff; padding: 10px;">KLIKKAA ALOITTAAKSESI</p>
+        <h1 style="font-size: 50px;">AETHER STATE</h1>
+        <p>ELÄVÄ VANKILA: Vankeja, taivas ja katto</p>
+        <p style="margin-top: 20px; background: white; color: black; padding: 10px;">KLIKKAA ALOITTAAKSESI</p>
     </div>
 </div>
 
 <div id="ui">
     <div class="hud">
-        <div id="loc">SIJAINTI: SELLI-OSASTO</div>
-        <div id="task" style="color: #ffcc00;">TEHTÄVÄ: Etsi tie ulkoilupihalle</div>
+        <div id="loc">PAIKKA: SELLI #1</div>
+        <div id="pop">VANKILAN VÄKILUKU: 12</div>
+        <div style="color: #00ffcc; margin-top: 5px;">Tavoite: Mene pihalle treenaamaan</div>
     </div>
 </div>
 
-<div id="crosshair"></div>
-
 <script>
-    // --- MOOTTORIN ASETUKSET ---
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x050505, 0.1);
+    scene.background = new THREE.Color(0x87CEEB); // Sininen taivas oletuksena
+
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -42,96 +40,98 @@
     document.body.appendChild(renderer.domElement);
 
     // MATERIAALIT
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
-    const metalMat = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.8 });
-    const grassMat = new THREE.MeshStandardMaterial({ color: 0x112211 }); // Pihan "ruoho"
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.9 });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+    const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const inmateMat = new THREE.MeshStandardMaterial({ color: 0xff6600 }); // Oranssi vankipuku
 
-    // --- RAKENTAMINEN ---
+    // 1. KATTO JA LATTIA (Koko rakennus)
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
 
-    function createWall(w, h, d, x, y, z, mat = wallMat) {
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-        mesh.position.set(x, y, z);
-        mesh.receiveShadow = true;
-        mesh.castShadow = true;
-        scene.add(mesh);
-        return mesh;
+    // Rakennuksen katto (Vain sisätiloissa x < 20)
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(40, 100), ceilingMat);
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.set(0, 5, 0);
+    scene.add(ceiling);
+
+    // 2. HUONEIDEN RAKENTAMINEN
+    function createRoom(w, d, h, x, z, name) {
+        const room = new THREE.Group();
+        // Seinät
+        const wallG = new THREE.BoxGeometry(w, h, 0.5);
+        const wall1 = new THREE.Mesh(wallG, wallMat);
+        wall1.position.set(x, h/2, z + d/2);
+        scene.add(wall1);
+        return room;
     }
 
-    // 1. SELLIOSASTO (Aloitus)
-    for(let i = 0; i < 4; i++) {
-        let z = i * 8;
-        createWall(6, 4, 0.2, -8, 2, z); // Takaseinä
-        createWall(0.2, 4, 6, -11, 2, z - 3); // Sivuseinä
-        createWall(0.2, 4, 6, -5, 2, z - 3); // Kalteriseinä
-        // Kalterit
-        for(let b = -2.5; b <= 2.5; b += 0.6) {
-            const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 4), metalMat);
-            bar.position.set(-5, 2, z - 3 + b);
+    // Selliosasto
+    for(let i = -2; i <= 2; i++) {
+        let z = i * 10;
+        // Sellien väliseinät
+        const sWall = new THREE.Mesh(new THREE.BoxGeometry(8, 5, 0.5), wallMat);
+        sWall.position.set(-10, 2.5, z);
+        scene.add(sWall);
+        
+        // Kalterit käytävälle
+        for(let b = -4; b <= 4; b += 1) {
+            const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 5), new THREE.MeshStandardMaterial({color: 0x111111, metalness: 1}));
+            bar.position.set(-6, 2.5, z + 5);
             scene.add(bar);
         }
     }
 
-    // 2. RUOKALA (Iso huone)
-    createWall(20, 0.2, 20, 15, 0, 10, floorMat); // Lattia
-    createWall(20, 5, 0.2, 15, 2.5, 0); // Seinä
-    // Pöydät
-    for(let px = 10; px <= 20; px += 5) {
-        for(let pz = 5; pz <= 15; pz += 5) {
-            const tTop = createWall(3, 0.2, 1.5, px, 0.8, pz, metalMat);
-            const tLeg = createWall(0.1, 0.8, 0.1, px, 0.4, pz, metalMat);
-        }
+    // Takaseinä
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, 5, 100), wallMat);
+    backWall.position.set(-14, 2.5, 0);
+    scene.add(backWall);
+
+    // Ruokala (Avoimempi tila)
+    const tableGeo = new THREE.BoxGeometry(4, 1, 2);
+    for(let j = 0; j < 3; j++) {
+        const table = new THREE.Mesh(tableGeo, wallMat);
+        table.position.set(5, 0.5, j * 10 - 10);
+        scene.add(table);
     }
 
-    // 3. SUIHKUT (Kaakeliseinät)
-    const showerMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
-    createWall(10, 4, 0.2, 15, 2, 30, showerMat);
-    for(let s = 12; s <= 18; s += 2) {
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.1), metalMat);
-        head.position.set(s, 3, 29.8);
-        scene.add(head);
+    // 3. VANGIT (AI)
+    const inmates = [];
+    function spawnInmate(x, z) {
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.2), inmateMat);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshStandardMaterial({color: 0xffdbac}));
+        head.position.y = 1;
+        const inmate = new THREE.Group();
+        inmate.add(body, head);
+        inmate.position.set(x, 1, z);
+        inmate.userData = { dir: Math.random() * Math.PI * 2, speed: 0.02 + Math.random() * 0.02 };
+        scene.add(inmate);
+        inmates.push(inmate);
     }
 
-    // 4. ULKOILUPIHA (Aita ja taivas)
-    const yardFloor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), grassMat);
-    yardFloor.rotation.x = -Math.PI / 2;
-    yardFloor.position.set(40, 0.01, 15);
-    scene.add(yardFloor);
-    // Aita (Kalterit ympärillä)
-    for(let a = 0; a <= 40; a += 2) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 6), metalMat);
-        post.position.set(20, 3, a - 5);
-        scene.add(post);
-    }
-    // Painonnostopenkki pihalla
-    createWall(1, 0.5, 3, 35, 0.25, 15, wallMat);
-    createWall(3, 0.1, 0.1, 35, 1.2, 15, metalMat); // Levytanko
+    // Luodaan vankeja eri puolille
+    for(let i = 0; i < 8; i++) spawnInmate(Math.random() * 10 - 5, Math.random() * 40 - 20);
 
-    // VALAISTUS
-    scene.add(new THREE.AmbientLight(0x404040, 0.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-    sun.position.set(50, 50, 50);
+    // 4. VARTIJA
+    const guard = new THREE.Group();
+    guard.add(new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshStandardMaterial({color: 0x000033})));
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.2), new THREE.MeshBasicMaterial({color: 0xff0000}));
+    eye.position.set(0, 0.8, 0.4);
+    guard.add(eye);
+    guard.position.set(10, 1, 0);
+    scene.add(guard);
+
+    // VALOT
+    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambient);
+    const sun = new THREE.DirectionalLight(0xffffff, 1);
+    sun.position.set(50, 50, 0);
+    sun.castShadow = true;
     scene.add(sun);
 
-    // VARTIJA (AI)
-    const guards = [];
-    function addGuard(x, z, range) {
-        const g = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.8, 0.7), metalMat);
-        const eye = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.2), new THREE.MeshBasicMaterial({color: 0xff0000}));
-        eye.position.set(0, 0.7, 0.3);
-        g.add(body, eye);
-        g.position.set(x, 0.9, z);
-        g.startZ = z;
-        g.range = range;
-        g.dir = 1;
-        scene.add(g);
-        guards.push(g);
-    }
-    addGuard(0, 10, 15); // Käytävävartija
-    addGuard(15, 10, 5);  // Ruokalavartija
-
-    // --- OHJAUS (Tarkka Minecraft-tyyli) ---
+    // OHJAUS
     let keys = {};
     document.addEventListener('keydown', (e) => keys[e.code] = true);
     document.addEventListener('keyup', (e) => keys[e.code] = false);
@@ -144,13 +144,13 @@
     });
 
     camera.rotation.order = 'YXZ';
-    camera.position.set(-8, 1.7, 0);
+    camera.position.set(-10, 1.7, 5);
 
     function animate() {
         requestAnimationFrame(animate);
         
         if (document.pointerLockElement) {
-            const speed = 0.12;
+            const speed = 0.1;
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
             dir.y = 0; dir.normalize();
@@ -161,20 +161,22 @@
             if (keys['KeyA']) camera.position.addScaledVector(side, speed);
             if (keys['KeyD']) camera.position.addScaledVector(side, -speed);
 
-            // Sijainti-päivitys UI:hin
-            if (camera.position.x > 30) document.getElementById('loc').innerHTML = "SIJAINTI: ULKOILUPIHA";
-            else if (camera.position.x > 10) document.getElementById('loc').innerHTML = "SIJAINTI: RUOKALA / SUIHKUT";
-            else document.getElementById('loc').innerHTML = "SIJAINTI: SELLI-OSASTO";
-
-            // Vartijoiden päivitys
-            guards.forEach(g => {
-                g.position.z += 0.06 * g.dir;
-                if (Math.abs(g.position.z - g.startZ) > g.range) g.dir *= -1;
-                
-                if (camera.position.distanceTo(g.position) < 2) {
-                    camera.position.set(-8, 1.7, 0); // Takaisin selliin
-                }
+            // Vankien AI - Ne vaeltavat
+            inmates.forEach(v => {
+                v.position.x += Math.cos(v.userData.dir) * v.userData.speed;
+                v.position.z += Math.sin(v.userData.dir) * v.userData.speed;
+                if (v.position.x > 18 || v.position.x < -13) v.userData.dir += Math.PI;
+                v.rotation.y = v.userData.dir;
             });
+
+            // Sijainti-teksti
+            if (camera.position.x > 20) {
+                document.getElementById('loc').innerHTML = "PAIKKA: ULKOILUPIHA";
+                scene.background.set(0x87CEEB); // Aurinkoinen taivas
+            } else {
+                document.getElementById('loc').innerHTML = "PAIKKA: SELLI-OSASTO / RUOKALA";
+                scene.background.set(0x111111); // Pimeä sisällä
+            }
         }
         renderer.render(scene, camera);
     }
