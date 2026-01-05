@@ -2,224 +2,183 @@
 <html lang="fi">
 <head>
     <meta charset="UTF-8">
-    <title>AETHER STATE | CODE ENGINE v8.0</title>
+    <title>AETHER STATE | THE COMPLEX</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Orbitron', sans-serif; }
-        #overlay { position: absolute; width: 100%; height: 100%; background: #000; display: flex; 
-                   flex-direction: column; align-items: center; justify-content: center; 
-                   color: #00ffcc; z-index: 1000; transition: 1s; }
-        #ui-layer { position: absolute; bottom: 30px; left: 30px; color: #00ffcc; pointer-events: none; }
-        .hud-card { background: rgba(0,20,20,0.8); padding: 20px; border: 2px solid #00ffcc; 
-                    box-shadow: 0 0 15px rgba(0,255,204,0.3); border-radius: 5px; }
-        #crosshair { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; 
-                     border: 1px solid #00ffcc; border-radius: 50%; transform: translate(-50%, -50%); }
-        .btn { border: 2px solid #00ffcc; background: none; color: #00ffcc; padding: 15px 30px; 
-               cursor: pointer; font-size: 20px; letter-spacing: 5px; margin-top: 20px; }
-        .btn:hover { background: #00ffcc; color: #000; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #00ffcc; pointer-events: none; z-index: 10; }
+        .hud { background: rgba(0,20,20,0.85); padding: 15px; border: 2px solid #00ffcc; border-radius: 5px; }
+        #blocker { position: absolute; width: 100%; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; z-index: 100; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #00ffcc; border-radius: 50%; transform: translate(-50%, -50%); }
     </style>
 </head>
 <body>
 
-<div id="overlay">
-    <h1 style="font-size: 60px; margin: 0;">AETHER STATE</h1>
-    <p style="color: #666;">UNITY-STYLE HARDCODE EDITION</p>
-    <button class="btn" onclick="initGame()">ASTU SISÄÄN</button>
+<div id="blocker" onclick="this.style.display='none'; document.body.requestPointerLock();">
+    <div style="text-align: center;">
+        <h1 style="color: #00ffcc; font-size: 45px; margin: 0;">AETHER STATE: COMPLEX</h1>
+        <p>TÄYSI VANKILA: Piha, Ruokala, Suihkut, Sellit</p>
+        <p style="margin-top: 30px; border: 1px solid #fff; padding: 10px;">KLIKKAA ALOITTAAKSESI</p>
+    </div>
 </div>
 
-<div id="ui-layer">
-    <div class="hud-card">
-        <div id="stat-cell">SIJAINTI: LOHKO-B</div>
-        <div id="stat-inv">ESINEET: -</div>
-        <div id="hint" style="color: #ff3366; font-size: 12px; margin-top: 10px;">> VÄLTÄ PUNAISET SENSORIT</div>
+<div id="ui">
+    <div class="hud">
+        <div id="loc">SIJAINTI: SELLI-OSASTO</div>
+        <div id="task" style="color: #ffcc00;">TEHTÄVÄ: Etsi tie ulkoilupihalle</div>
     </div>
 </div>
 
 <div id="crosshair"></div>
 
 <script>
-    // --- PELIN MOOTTORI JA MUUTTUJAT ---
-    let scene, camera, renderer, clock;
-    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-    let velocity = new THREE.Vector3();
-    let direction = new THREE.Vector3();
-    let objects = []; // Törmäystarkistus
-    let guards = [];
-    let gameActive = false;
+    // --- MOOTTORIN ASETUKSET ---
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x050505, 0.1);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
 
-    function initGame() {
-        document.getElementById('overlay').style.opacity = '0';
-        setTimeout(() => document.getElementById('overlay').style.display = 'none', 1000);
-        document.body.requestPointerLock();
-        gameActive = true;
-    }
+    // MATERIAALIT
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.8 });
+    const grassMat = new THREE.MeshStandardMaterial({ color: 0x112211 }); // Pihan "ruoho"
 
-    // --- MAAILMAN ALUSTUS ---
-    function setup() {
-        scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x020205);
-        scene.fog = new THREE.FogExp2(0x020205, 0.07);
+    // --- RAKENTAMINEN ---
 
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(-8, 1.7, 5);
-
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        document.body.appendChild(renderer.domElement);
-
-        clock = new THREE.Clock();
-
-        // VALAISTUS
-        const ambient = new THREE.AmbientLight(0x404040, 0.5);
-        scene.add(ambient);
-
-        // --- RAKENTAMINEN (Ei neliöitä, vaan muotoja) ---
-        const floorGeo = new THREE.PlaneGeometry(200, 200);
-        const floorMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.5 });
-        const floor = new THREE.Mesh(floorGeo, floorMat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        scene.add(floor);
-
-        // LUODAAN SELLIT (Modulaarinen arkkitehtuuri)
-        for(let i = 0; i < 8; i++) {
-            createComplexCell(i * 12);
-        }
-
-        // --- VARTIJOIDEN LUONTI ---
-        createAdvancedGuard(15);
-        createAdvancedGuard(45);
-
-        // TÖRMÄYKSET JA OHJAUS
-        window.addEventListener('keydown', (e) => handleKeys(e.code, true));
-        window.addEventListener('keyup', (e) => handleKeys(e.code, false));
-        document.addEventListener('mousemove', onMouseMove);
-        
-        animate();
-    }
-
-    function createComplexCell(z) {
-        const wallMat = new THREE.MeshStandardMaterial({ color: 0x222225, roughness: 1 });
-        
-        // Ulkoseinä (paksu)
-        createBox(0.5, 8, 12, -12, 4, z, wallMat);
-        // Takaseinä
-        createBox(12, 8, 0.5, -12, 4, z - 6, wallMat);
-        
-        // Kalterit (Parempi 3D-malli)
-        const barGeo = new THREE.CylinderGeometry(0.08, 0.08, 8);
-        const barMat = new THREE.MeshStandardMaterial({ color: 0x000000, metalness: 1 });
-        for(let j = -5.5; j < 5.5; j += 1.2) {
-            const bar = new THREE.Mesh(barGeo, barMat);
-            bar.position.set(-6, 4, z + j);
-            scene.add(bar);
-            objects.push(bar);
-        }
-
-        // Valo käytävään
-        const light = new THREE.PointLight(0x00ffcc, 1.2, 18);
-        light.position.set(0, 7, z);
-        scene.add(light);
-    }
-
-    function createBox(w, h, d, x, y, z, mat) {
+    function createWall(w, h, d, x, y, z, mat = wallMat) {
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
         mesh.position.set(x, y, z);
         mesh.receiveShadow = true;
+        mesh.castShadow = true;
         scene.add(mesh);
-        objects.push(mesh); // Lisätään törmäyslistaan
+        return mesh;
     }
 
-    function createAdvancedGuard(zPos) {
+    // 1. SELLIOSASTO (Aloitus)
+    for(let i = 0; i < 4; i++) {
+        let z = i * 8;
+        createWall(6, 4, 0.2, -8, 2, z); // Takaseinä
+        createWall(0.2, 4, 6, -11, 2, z - 3); // Sivuseinä
+        createWall(0.2, 4, 6, -5, 2, z - 3); // Kalteriseinä
+        // Kalterit
+        for(let b = -2.5; b <= 2.5; b += 0.6) {
+            const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 4), metalMat);
+            bar.position.set(-5, 2, z - 3 + b);
+            scene.add(bar);
+        }
+    }
+
+    // 2. RUOKALA (Iso huone)
+    createWall(20, 0.2, 20, 15, 0, 10, floorMat); // Lattia
+    createWall(20, 5, 0.2, 15, 2.5, 0); // Seinä
+    // Pöydät
+    for(let px = 10; px <= 20; px += 5) {
+        for(let pz = 5; pz <= 15; pz += 5) {
+            const tTop = createWall(3, 0.2, 1.5, px, 0.8, pz, metalMat);
+            const tLeg = createWall(0.1, 0.8, 0.1, px, 0.4, pz, metalMat);
+        }
+    }
+
+    // 3. SUIHKUT (Kaakeliseinät)
+    const showerMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+    createWall(10, 4, 0.2, 15, 2, 30, showerMat);
+    for(let s = 12; s <= 18; s += 2) {
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.1), metalMat);
+        head.position.set(s, 3, 29.8);
+        scene.add(head);
+    }
+
+    // 4. ULKOILUPIHA (Aita ja taivas)
+    const yardFloor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), grassMat);
+    yardFloor.rotation.x = -Math.PI / 2;
+    yardFloor.position.set(40, 0.01, 15);
+    scene.add(yardFloor);
+    // Aita (Kalterit ympärillä)
+    for(let a = 0; a <= 40; a += 2) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 6), metalMat);
+        post.position.set(20, 3, a - 5);
+        scene.add(post);
+    }
+    // Painonnostopenkki pihalla
+    createWall(1, 0.5, 3, 35, 0.25, 15, wallMat);
+    createWall(3, 0.1, 0.1, 35, 1.2, 15, metalMat); // Levytanko
+
+    // VALAISTUS
+    scene.add(new THREE.AmbientLight(0x404040, 0.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(50, 50, 50);
+    scene.add(sun);
+
+    // VARTIJA (AI)
+    const guards = [];
+    function addGuard(x, z, range) {
         const g = new THREE.Group();
-        const metal = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8 });
-        
-        // Tankkialusta
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.5, 6), metal);
-        // Keskiruumis
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.5, 0.8), metal);
-        body.position.y = 1;
-        // Pää ja Laser
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.5), metal);
-        head.position.y = 2.2;
-        const eye = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.1), new THREE.MeshBasicMaterial({color: 0xff0000}));
-        eye.position.set(0, 2.2, 0.4);
-        
-        g.add(base, body, head, eye);
-        g.position.set(2, 0.25, zPos);
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.8, 0.7), metalMat);
+        const eye = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.2), new THREE.MeshBasicMaterial({color: 0xff0000}));
+        eye.position.set(0, 0.7, 0.3);
+        g.add(body, eye);
+        g.position.set(x, 0.9, z);
+        g.startZ = z;
+        g.range = range;
         g.dir = 1;
         scene.add(g);
         guards.push(g);
     }
+    addGuard(0, 10, 15); // Käytävävartija
+    addGuard(15, 10, 5);  // Ruokalavartija
 
-    // --- MOOTTORIN LOGIIKKA ---
-    function handleKeys(code, state) {
-        switch(code) {
-            case 'KeyW': moveForward = state; break;
-            case 'KeyS': moveBackward = state; break;
-            case 'KeyA': moveLeft = state; break;
-            case 'KeyD': moveRight = state; break;
-        }
-    }
-
-    function onMouseMove(e) {
+    // --- OHJAUS (Tarkka Minecraft-tyyli) ---
+    let keys = {};
+    document.addEventListener('keydown', (e) => keys[e.code] = true);
+    document.addEventListener('keyup', (e) => keys[e.code] = false);
+    document.addEventListener('mousemove', (e) => {
         if (document.pointerLockElement) {
             camera.rotation.y -= e.movementX * 0.002;
             camera.rotation.x -= e.movementY * 0.002;
             camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
         }
-    }
+    });
+
+    camera.rotation.order = 'YXZ';
+    camera.position.set(-8, 1.7, 0);
 
     function animate() {
         requestAnimationFrame(animate);
-        const delta = clock.getDelta();
+        
+        if (document.pointerLockElement) {
+            const speed = 0.12;
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            dir.y = 0; dir.normalize();
+            const side = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), dir).normalize();
 
-        if (gameActive && document.pointerLockElement) {
-            // FYSIIKKA & LIIKE
-            velocity.x -= velocity.x * 10.0 * delta;
-            velocity.z -= velocity.z * 10.0 * delta;
+            if (keys['KeyW']) camera.position.addScaledVector(dir, speed);
+            if (keys['KeyS']) camera.position.addScaledVector(dir, -speed);
+            if (keys['KeyA']) camera.position.addScaledVector(side, speed);
+            if (keys['KeyD']) camera.position.addScaledVector(side, -speed);
 
-            direction.z = Number(moveForward) - Number(moveBackward);
-            direction.x = Number(moveRight) - Number(moveLeft);
-            direction.normalize();
+            // Sijainti-päivitys UI:hin
+            if (camera.position.x > 30) document.getElementById('loc').innerHTML = "SIJAINTI: ULKOILUPIHA";
+            else if (camera.position.x > 10) document.getElementById('loc').innerHTML = "SIJAINTI: RUOKALA / SUIHKUT";
+            else document.getElementById('loc').innerHTML = "SIJAINTI: SELLI-OSASTO";
 
-            if (moveForward || moveBackward) velocity.z -= direction.z * 100.0 * delta;
-            if (moveLeft || moveRight) velocity.x -= direction.x * 100.0 * delta;
-
-            camera.translateX(-velocity.x * delta);
-            camera.translateZ(velocity.z * delta);
-            camera.position.y = 1.7;
-
-            // TÖRMÄYSTEN TARKISTUS (Seinät)
-            if (camera.position.x < -14) camera.position.x = -14;
-            if (camera.position.x > 14) camera.position.x = 14;
-
-            // VARTIJOIDEN AI
+            // Vartijoiden päivitys
             guards.forEach(g => {
-                g.position.z += 3 * delta * g.dir;
-                g.rotation.y = g.dir === 1 ? 0 : Math.PI;
-                if (g.position.z > 90 || g.position.z < 0) g.dir *= -1;
-
-                // Detection
-                if (camera.position.distanceTo(g.position) < 3.5) {
-                    camera.position.set(-8, 1.7, 5);
-                    document.getElementById('stat-inv').innerHTML = "HÄLYTYS!";
-                    document.getElementById('stat-inv').style.color = "red";
+                g.position.z += 0.06 * g.dir;
+                if (Math.abs(g.position.z - g.startZ) > g.range) g.dir *= -1;
+                
+                if (camera.position.distanceTo(g.position) < 2) {
+                    camera.position.set(-8, 1.7, 0); // Takaisin selliin
                 }
             });
         }
-
         renderer.render(scene, camera);
     }
-
-    setup();
-    window.onresize = () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    };
+    animate();
 </script>
 </body>
 </html>
