@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <title>AETHER STATE v3 | Pako Vankilasta</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; background: #000; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; }
+        #container3d { width: 100%; height: 50vh; background: #111; border-bottom: 4px solid #ff4d4d; position: relative; }
+        #game-ui { display: flex; height: 50vh; }
+        #canvas2d { background: #1a1a1a; border-right: 2px solid #444; }
+        #sidebar { flex: 1; padding: 20px; background: #050505; overflow-y: auto; }
+        .stat { font-size: 18px; color: #f1c40f; margin-bottom: 5px; }
+        .danger { color: #ff4d4d; font-weight: bold; }
+        .log { font-size: 12px; color: #0f0; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px; }
+        #ui-hint { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 5px; border-radius: 5px; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<div id="container3d">
+    <div id="ui-hint">3D-NÄKYMÄ: Klikkaa sänkyä tai WC-istuinta tutkiaksesi</div>
+</div>
+
+<div id="game-ui">
+    <canvas id="canvas2d" width="500" height="400"></canvas>
+    <div id="sidebar">
+        <div class="stat">VANKI #2701</div>
+        <div id="status-text" class="stat">TILA: SELLISSÄ</div>
+        <div id="inv-text" class="stat">REPU: Tyhjä</div>
+        <div id="alert-text" class="danger"></div>
+        <div id="log" class="log">> Vartijat aloittavat kierroksen. Ole varovainen.</div>
+        <div style="font-size: 10px; color: #555; margin-top: 20px;">
+            WASD/NUOLET: Liiku 2D-kartalla<br>
+            HIIRI: Klikkaa 3D-esineitä
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- PELIN TILA ---
+    let gameState = {
+        hasSpoon: false,
+        tunnelFound: false,
+        alertLevel: 0,
+        isInCell: true,
+        inventory: []
+    };
+
+    function addLog(msg) {
+        const log = document.getElementById('log');
+        log.innerHTML = "> " + msg + "<br>" + log.innerHTML;
+    }
+
+    // --- 1. 3D-MOOTTORI (THREE.JS) ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / (window.innerHeight / 2), 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight / 2);
+    document.getElementById('container3d').appendChild(renderer.domElement);
+
+    // Huone (Selli)
+    const roomGeo = new THREE.BoxGeometry(10, 8, 10);
+    const roomMat = new THREE.MeshPhongMaterial({ color: 0x333333, side: THREE.BackSide });
+    const cell = new THREE.Mesh(roomGeo, roomMat);
+    scene.add(cell);
+
+    // Sänky (Klikattava)
+    const bedGeo = new THREE.BoxGeometry(2, 1, 4);
+    const bedMat = new THREE.MeshPhongMaterial({ color: 0x5555bb });
+    const bed = new THREE.Mesh(bedGeo, bedMat);
+    bed.position.set(-3.5, -3.5, -2);
+    bed.name = "bed";
+    scene.add(bed);
+
+    // WC-istuin (Klikattava)
+    const toiletGeo = new THREE.CylinderGeometry(0.5, 0.5, 1);
+    const toiletMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee });
+    const toilet = new THREE.Mesh(toiletGeo, toiletMat);
+    toilet.position.set(4, -3.5, -4);
+    toilet.name = "toilet";
+    scene.add(toilet);
+
+    // Tunnelin suu (Piilossa aluksi)
+    const tunnelGeo = new THREE.CircleGeometry(0.8, 32);
+    const tunnelMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const tunnelHole = new THREE.Mesh(tunnelGeo, tunnelMat);
+    tunnelHole.rotation.x = -Math.PI / 2;
+    tunnelHole.position.set(-3.5, -3.49, -2);
+    tunnelHole.visible = false;
+    scene.add(tunnelHole);
+
+    const light = new THREE.PointLight(0xffffff, 1, 20);
+    light.position.set(0, 3, 0);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x222222));
+    camera.position.set(0, 2, 6);
+    camera.lookAt(0, 0, 0);
+
+    // Klikkausten tunnistus
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    window.addEventListener('mousedown', (event) => {
+        if (event.clientY > window.innerHeight / 2) return;
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / (window.innerHeight / 2)) * 2 + 1;
+        
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(scene.children);
+        
+        intersects.forEach(obj => {
+            if (obj.object.name === "bed") {
+                if (!gameState.tunnelFound) {
+                    gameState.tunnelFound = true;
+                    tunnelHole.visible = true;
+                    addLog("Löysit tunnelin alun sängyn alta! Tarvitset jotain kaivamiseen.");
+                } else {
+                    addLog("Tunneli on täällä. Tarvitset lusikan.");
+                }
+            }
+            if (obj.object.name === "toilet") {
+                addLog("WC-istuin. Täällä ei ole mitään hyödyllistä juuri nyt.");
+            }
+        });
+    });
+
+    // --- 2. 2D-MOOTTORI (KARTTA JA VARTIJAT) ---
+    const canvas = document.getElementById('canvas2d');
+    const ctx = canvas.getContext('2d');
+
+    let p = { x: 30, y: 30, r: 8, color: '#fff' };
+    let guards = [
+        { x: 200, y: 100, dx: 2, dy: 0, range: 100 },
+        { x: 400, y: 300, dx: 0, dy: -2, range: 150 }
+    ];
+
+    let walls = [
+        { x: 0, y: 80, w: 150, h: 10 },   // Sellin seinä
+        { x: 200, y: 0, w: 10, h: 300 },  // Keskikäytävä
+        { x: 300, y: 150, w: 200, h: 10 } // Ruokalan seinä
+    ];
+
+    let keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function update2D() {
+        // Pelaajan liike
+        let nx = p.x; let ny = p.y;
+        if (keys.ArrowUp || keys.KeyW) ny -= 3;
+        if (keys.ArrowDown || keys.KeyS) ny += 3;
+        if (keys.ArrowLeft || keys.KeyA) nx -= 3;
+        if (keys.ArrowRight || keys.KeyD) nx += 3;
+
+        // Seinätörmäys
+        let hit = false;
+        walls.forEach(w => {
+            if (nx+p.r > w.x && nx-p.r < w.x+w.w && ny+p.r > w.y && ny-p.r < w.y+w.h) hit = true;
+        });
+        if (!hit) { p.x = nx; p.y = ny; }
+
+        // Vartijoiden liike
+        guards.forEach(g => {
+            g.x += g.dx; g.y += g.dy;
+            if (g.x > 450 || g.x < 150) g.dx *= -1;
+            if (g.y > 350 || g.y < 50) g.dy *= -1;
+
+            // Havaitseminen
+            let dist = Math.hypot(p.x - g.x, p.y - g.y);
+            if (dist < 60) {
+                p.x = 30; p.y = 30; // Takaisin selliin
+                addLog("VARTIJA HUOMASI SINUT! Jouduit takaisin eristykseen.");
+                gameState.alertLevel++;
+            }
+        });
+
+        // Esineiden keräys (Lusikka ruokalassa)
+        if (p.x > 400 && p.y > 300 && !gameState.hasSpoon) {
+            gameState.hasSpoon = true;
+            document.getElementById('inv-text').textContent = "REPU: Teroitettu lusikka";
+            addLog("Löysit ruokalasta teroitetun lusikan! Mene takaisin selliin.");
+        }
+
+        // Piirtäminen
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Huoneet
+        ctx.fillStyle = "#111";
+        ctx.fillRect(0,0,80,80); // Selli
+        ctx.fillRect(400,320,100,80); // Ruokala
+
+        // Seinät
+        ctx.fillStyle = "#444";
+        walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
+
+        // Pelaaja
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+
+        // Vartijat
+        ctx.fillStyle = "red";
+        guards.forEach(g => {
+            ctx.beginPath(); ctx.arc(g.x, g.y, 8, 0, Math.PI*2); ctx.fill();
+            // Näkökenttä
+            ctx.strokeStyle = "rgba(255,0,0,0.2)";
+            ctx.beginPath(); ctx.arc(g.x, g.y, 60, 0, Math.PI*2); ctx.stroke();
+        });
+
+        // Sijaintipäivitys
+        if (p.x < 80 && p.y < 80) {
+            document.getElementById('status-text').textContent = "TILA: SELLISSÄ";
+            if (gameState.hasSpoon && gameState.tunnelFound) {
+                addLog("SINÄ VOITIT! Pakenit tunnelin kautta vapauteen!");
+                p.x = -100; // Pelaaja pois kartalta
+            }
+        } else {
+            document.getElementById('status-text').textContent = "TILA: KÄYTÄVÄLLÄ";
+        }
+
+        requestAnimationFrame(update2D);
+    }
+
+    function animate3D() {
+        requestAnimationFrame(animate3D);
+        renderer.render(scene, camera);
+    }
+
+    // Käynnistys
+    update2D();
+    animate3D();
+
+</script>
+</body>
+</html>
