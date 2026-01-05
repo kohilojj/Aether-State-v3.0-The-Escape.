@@ -2,201 +2,224 @@
 <html lang="fi">
 <head>
     <meta charset="UTF-8">
-    <title>AETHER STATE | DEFINITIVE 3D</title>
+    <title>AETHER STATE | CODE ENGINE v8.0</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #00ffcc; pointer-events: none; z-index: 10; }
-        #blocker { 
-            position: absolute; width: 100%; height: 100%; 
-            background: #000; display: flex; align-items: center; 
-            justify-content: center; color: #fff; cursor: pointer; z-index: 100;
-        }
-        .hud { background: rgba(0,20,20,0.8); padding: 20px; border: 2px solid #00ffcc; border-radius: 5px; }
-        #crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; border: 1px solid #00ffcc; border-radius: 50%; transform: translate(-50%, -50%); }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Orbitron', sans-serif; }
+        #overlay { position: absolute; width: 100%; height: 100%; background: #000; display: flex; 
+                   flex-direction: column; align-items: center; justify-content: center; 
+                   color: #00ffcc; z-index: 1000; transition: 1s; }
+        #ui-layer { position: absolute; bottom: 30px; left: 30px; color: #00ffcc; pointer-events: none; }
+        .hud-card { background: rgba(0,20,20,0.8); padding: 20px; border: 2px solid #00ffcc; 
+                    box-shadow: 0 0 15px rgba(0,255,204,0.3); border-radius: 5px; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; 
+                     border: 1px solid #00ffcc; border-radius: 50%; transform: translate(-50%, -50%); }
+        .btn { border: 2px solid #00ffcc; background: none; color: #00ffcc; padding: 15px 30px; 
+               cursor: pointer; font-size: 20px; letter-spacing: 5px; margin-top: 20px; }
+        .btn:hover { background: #00ffcc; color: #000; }
     </style>
 </head>
 <body>
 
-<div id="blocker" onclick="start()">
-    <div style="text-align: center;">
-        <h1 style="color: #00ffcc; font-size: 50px; margin: 0;">AETHER STATE</h1>
-        <p style="color: #ff4d4d;">v7.0 - DEFINITIVE EDITION</p>
-        <p style="margin-top: 50px; border: 2px solid #fff; padding: 20px;">KLIKKAA ALOITTAAKSESI</p>
-        <p style="font-size: 12px; color: #666;">WASD = Liiku | HIIRI = Katso</p>
-    </div>
+<div id="overlay">
+    <h1 style="font-size: 60px; margin: 0;">AETHER STATE</h1>
+    <p style="color: #666;">UNITY-STYLE HARDCODE EDITION</p>
+    <button class="btn" onclick="initGame()">ASTU SISÄÄN</button>
 </div>
 
-<div id="ui">
-    <div class="hud">
-        <div id="status">TILA: SELLIOSASTO B</div>
-        <div id="inv">ESINEET: TYHJÄ</div>
-        <div id="msg" style="color: #ffcc00; margin-top: 10px;">VÄLTÄ VARTIJOITA JA ETSI ULOSKÄYNTI</div>
+<div id="ui-layer">
+    <div class="hud-card">
+        <div id="stat-cell">SIJAINTI: LOHKO-B</div>
+        <div id="stat-inv">ESINEET: -</div>
+        <div id="hint" style="color: #ff3366; font-size: 12px; margin-top: 10px;">> VÄLTÄ PUNAISET SENSORIT</div>
     </div>
 </div>
 
 <div id="crosshair"></div>
 
 <script>
-    let gameStarted = false;
-    function start() {
+    // --- PELIN MOOTTORI JA MUUTTUJAT ---
+    let scene, camera, renderer, clock;
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+    let velocity = new THREE.Vector3();
+    let direction = new THREE.Vector3();
+    let objects = []; // Törmäystarkistus
+    let guards = [];
+    let gameActive = false;
+
+    function initGame() {
+        document.getElementById('overlay').style.opacity = '0';
+        setTimeout(() => document.getElementById('overlay').style.display = 'none', 1000);
         document.body.requestPointerLock();
-        document.getElementById('blocker').style.display = 'none';
-        gameStarted = true;
+        gameActive = true;
     }
 
-    // --- 1. MOOTTORI ---
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0a0a0a, 0.1);
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    document.body.appendChild(renderer.domElement);
+    // --- MAAILMAN ALUSTUS ---
+    function setup() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x020205);
+        scene.fog = new THREE.FogExp2(0x020205, 0.07);
 
-    // --- 2. VALAISTUS ---
-    const ambient = new THREE.AmbientLight(0x404040, 0.5);
-    scene.add(ambient);
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(-8, 1.7, 5);
 
-    // --- 3. MAAILMAN MATERIAALIT ---
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
-    const barMat = new THREE.MeshStandardMaterial({ color: 0x000000, metalness: 1 });
-    const orangeMat = new THREE.MeshStandardMaterial({ color: 0xff6600 }); // Vankien asu
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
 
-    // Lattia
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), floorMat);
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    scene.add(floor);
+        clock = new THREE.Clock();
 
-    // --- 4. RAKENTAMINEN (SELLIT JA KÄYTÄVÄ) ---
-    function buildPrison() {
-        for(let i = 0; i < 6; i++) {
-            let z = i * 15;
-            // Seinät
-            createWall(10, 4, z, 0.5, 8, 15); // Oikea seinä
-            createWall(-10, 4, z, 0.5, 8, 15); // Vasen seinä
-            
-            // Kalterit
-            for(let b = -7; b < 7; b += 1.5) {
-                const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 8), barMat);
-                bar.position.set(-6, 4, z + b);
-                scene.add(bar);
-            }
+        // VALAISTUS
+        const ambient = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambient);
 
-            // Valo jokaiseen käytävän osaan
-            const light = new THREE.PointLight(0x00ffcc, 1, 20);
-            light.position.set(0, 7, z);
-            scene.add(light);
+        // --- RAKENTAMINEN (Ei neliöitä, vaan muotoja) ---
+        const floorGeo = new THREE.PlaneGeometry(200, 200);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.5 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // LUODAAN SELLIT (Modulaarinen arkkitehtuuri)
+        for(let i = 0; i < 8; i++) {
+            createComplexCell(i * 12);
         }
+
+        // --- VARTIJOIDEN LUONTI ---
+        createAdvancedGuard(15);
+        createAdvancedGuard(45);
+
+        // TÖRMÄYKSET JA OHJAUS
+        window.addEventListener('keydown', (e) => handleKeys(e.code, true));
+        window.addEventListener('keyup', (e) => handleKeys(e.code, false));
+        document.addEventListener('mousemove', onMouseMove);
+        
+        animate();
     }
 
-    function createWall(x, y, z, w, h, d) {
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    function createComplexCell(z) {
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x222225, roughness: 1 });
+        
+        // Ulkoseinä (paksu)
+        createBox(0.5, 8, 12, -12, 4, z, wallMat);
+        // Takaseinä
+        createBox(12, 8, 0.5, -12, 4, z - 6, wallMat);
+        
+        // Kalterit (Parempi 3D-malli)
+        const barGeo = new THREE.CylinderGeometry(0.08, 0.08, 8);
+        const barMat = new THREE.MeshStandardMaterial({ color: 0x000000, metalness: 1 });
+        for(let j = -5.5; j < 5.5; j += 1.2) {
+            const bar = new THREE.Mesh(barGeo, barMat);
+            bar.position.set(-6, 4, z + j);
+            scene.add(bar);
+            objects.push(bar);
+        }
+
+        // Valo käytävään
+        const light = new THREE.PointLight(0x00ffcc, 1.2, 18);
+        light.position.set(0, 7, z);
+        scene.add(light);
+    }
+
+    function createBox(w, h, d, x, y, z, mat) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
         mesh.position.set(x, y, z);
         mesh.receiveShadow = true;
         scene.add(mesh);
+        objects.push(mesh); // Lisätään törmäyslistaan
     }
-    buildPrison();
 
-    // --- 5. HAHMOT (VARTIJA JA VANGIT) ---
-    const guards = [];
-    function createGuard(z) {
+    function createAdvancedGuard(zPos) {
         const g = new THREE.Group();
-        // Alaruumis (tankki)
-        const base = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 1.5), wallMat);
-        // Yläruumis
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 1.5), barMat);
+        const metal = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8 });
+        
+        // Tankkialusta
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.5, 6), metal);
+        // Keskiruumis
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.5, 0.8), metal);
         body.position.y = 1;
-        // Pää ja Laser-silmä
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), wallMat);
-        head.position.y = 2;
+        // Pää ja Laser
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.5), metal);
+        head.position.y = 2.2;
         const eye = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.1), new THREE.MeshBasicMaterial({color: 0xff0000}));
-        eye.position.set(0, 2.1, 0.4);
+        eye.position.set(0, 2.2, 0.4);
         
         g.add(base, body, head, eye);
-        g.position.set(0, 0.4, z);
+        g.position.set(2, 0.25, zPos);
         g.dir = 1;
         scene.add(g);
         guards.push(g);
     }
-    createGuard(20);
-    createGuard(50);
 
-    const inmates = [];
-    function createInmate(x, z) {
-        const inmate = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1), orangeMat);
-        body.position.y = 1;
-        inmate.add(body);
-        inmate.position.set(x, 0, z);
-        inmate.dir = Math.random() > 0.5 ? 1 : -1;
-        scene.add(inmate);
-        inmates.push(inmate);
+    // --- MOOTTORIN LOGIIKKA ---
+    function handleKeys(code, state) {
+        switch(code) {
+            case 'KeyW': moveForward = state; break;
+            case 'KeyS': moveBackward = state; break;
+            case 'KeyA': moveLeft = state; break;
+            case 'KeyD': moveRight = state; break;
+        }
     }
-    for(let i=0; i<5; i++) createInmate(-8, i*15);
 
-    // --- 6. OHJAUS ---
-    let keys = {};
-    document.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
-    document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
-    
-    document.addEventListener('mousemove', (e) => {
+    function onMouseMove(e) {
         if (document.pointerLockElement) {
             camera.rotation.y -= e.movementX * 0.002;
             camera.rotation.x -= e.movementY * 0.002;
             camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x));
         }
-    });
+    }
 
-    camera.rotation.order = 'YXZ';
-    camera.position.set(-8, 1.7, 5);
+    function animate() {
+        requestAnimationFrame(animate);
+        const delta = clock.getDelta();
 
-    // --- 7. PELISILMUKKA ---
-    function update() {
-        requestAnimationFrame(update);
-        if (!gameStarted || !document.pointerLockElement) return;
+        if (gameActive && document.pointerLockElement) {
+            // FYSIIKKA & LIIKE
+            velocity.x -= velocity.x * 10.0 * delta;
+            velocity.z -= velocity.z * 10.0 * delta;
 
-        // Pelaajan liike
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        dir.y = 0; dir.normalize();
-        const side = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), dir).normalize();
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
 
-        if (keys.w) camera.position.addScaledVector(dir, 0.1);
-        if (keys.s) camera.position.addScaledVector(dir, -0.1);
-        if (keys.a) camera.position.addScaledVector(side, 0.1);
-        if (keys.d) camera.position.addScaledVector(side, -0.1);
+            if (moveForward || moveBackward) velocity.z -= direction.z * 100.0 * delta;
+            if (moveLeft || moveRight) velocity.x -= direction.x * 100.0 * delta;
 
-        // Vartijoiden tekoäly
-        guards.forEach(g => {
-            g.position.z += 0.05 * g.dir;
-            if (g.position.z > 80 || g.position.z < 10) g.dir *= -1;
-            
-            // Kiinnijääminen
-            if (camera.position.distanceTo(g.position) < 2.5) {
-                camera.position.set(-8, 1.7, 5);
-                document.getElementById('msg').innerHTML = "KIINNI JÄIT! Vartija havaitsi liikettä.";
-            }
-        });
+            camera.translateX(-velocity.x * delta);
+            camera.translateZ(velocity.z * delta);
+            camera.position.y = 1.7;
 
-        // Vankien liike
-        inmates.forEach(n => {
-            n.position.z += 0.02 * n.dir;
-            if (Math.abs(n.position.z % 15) > 5) n.dir *= -1;
-        });
+            // TÖRMÄYSTEN TARKISTUS (Seinät)
+            if (camera.position.x < -14) camera.position.x = -14;
+            if (camera.position.x > 14) camera.position.x = 14;
+
+            // VARTIJOIDEN AI
+            guards.forEach(g => {
+                g.position.z += 3 * delta * g.dir;
+                g.rotation.y = g.dir === 1 ? 0 : Math.PI;
+                if (g.position.z > 90 || g.position.z < 0) g.dir *= -1;
+
+                // Detection
+                if (camera.position.distanceTo(g.position) < 3.5) {
+                    camera.position.set(-8, 1.7, 5);
+                    document.getElementById('stat-inv').innerHTML = "HÄLYTYS!";
+                    document.getElementById('stat-inv').style.color = "red";
+                }
+            });
+        }
 
         renderer.render(scene, camera);
     }
 
-    update();
-
-    window.addEventListener('resize', () => {
+    setup();
+    window.onresize = () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    };
 </script>
 </body>
 </html>
